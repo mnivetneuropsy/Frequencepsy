@@ -1593,7 +1593,7 @@ r_podcast_tdah:{
 <p>Pour découvrir son travail :</p>
 <a class="res-link" href="https://www.tadamformations.fr" target="_blank">↗ Tadam! Formations — Marion Bachelet</a>
 
-<img src="images/img_jeu1.jpg" alt="Jeux Brise-Glace — Marion Bachelet" style="width:100%;max-width:500px;display:block;margin:0 auto 18px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.5)" onerror="this.style.opacity=0">
+<img src="images/img_jeu1.jpg" alt="Jeux Brise-Glace — Marion Bachelet" style="width:100%;max-width:500px;display:block;margin:0 auto 18px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.5)" onerror="this.outerHTML='<div style=\'padding:20px;background:rgba(255,255,255,.05);border-radius:14px;border:2px dashed rgba(255,255,255,.15);text-align:center;color:rgba(255,255,255,.35);font-size:12px;margin-bottom:18px\'>📷 <strong>img_jeu1.jpg</strong> — image à uploader dans le dossier images/</div>'">
 <p style="text-align:center;font-size:11.5px;color:rgba(255,255,255,.4);margin-top:-10px;margin-bottom:18px"><em>© Marion Bachelet — Tadam! Formations — tous droits réservés</em></p>
 `
 }
@@ -2033,14 +2033,13 @@ let codeCallback = null;
    appear CLOSE to their parent.
 ══════════════════════════════════════════ */
 
-// Fan layout: root at BOTTOM, all 5 hubs in upward arc above root
-// → ALL branches always go UPWARD = away from root
-const HUB_ROOT      = { x:1900, y:1800 }; // root at BOTTOM
-const HUB_TOOLS     = { x:1640, y:1650 }; // upper-left-left  ↖↖
-const HUB_TOPICS    = { x:1750, y:1540 }; // upper-left       ↖
-const HUB_DATE      = { x:1900, y:1500 }; // top center       ↑
-const HUB_EVENTS    = { x:2050, y:1540 }; // upper-right      ↗
-const HUB_RESOURCES = { x:2160, y:1650 }; // upper-right-right ↗↗
+// Pentagon: root at CENTER, 5 hubs evenly spread around root
+const HUB_ROOT      = { x:1900, y:1500 }; // center
+const HUB_DATE      = { x:1900, y:1200 }; // top         ↑
+const HUB_EVENTS    = { x:2185, y:1286 }; // upper-right ↗
+const HUB_RESOURCES = { x:2092, y:1642 }; // lower-right ↘
+const HUB_TOPICS    = { x:1708, y:1642 }; // lower-left  ↙
+const HUB_TOOLS     = { x:1615, y:1286 }; // upper-left  ↖
 
 // DATE_MAI: above HUB_DATE
 const DATE_MAI = { x:HUB_DATE.x, y:HUB_DATE.y - 180 };
@@ -2281,33 +2280,33 @@ const HUB_EV_X = HUB_EVENTS.x;
 const HUB_EV_Y = HUB_EVENTS.y;
 // EVENTS children go RIGHT (away from root which is left of hub_events)
 // ev_mai above, ev_juin below — both pushed rightward
-addBubble({id:"ev_mai",  x:HUB_EV_X+220, y:HUB_EV_Y-120, text:"Mai 2026",     color:"c-sub-date", size:"sz-lg", children:["ev_crime","ev_tcc_b","ev_neurosci_b"], group:"ev_month"});
-addBubble({id:"ev_juin", x:HUB_EV_X+220, y:HUB_EV_Y-300, text:"Juin 2026",   color:"c-sub-date", size:"sz-lg", children:["ev_har_b","ev_jnpn_b","ev_neuroplasticite_b","ev_rehab_b","ev_sfpeada_b","ev_sf3pa_b","ev_tdah_cn_b","ev_bipolaire_b"], group:"ev_month"});
-addBubble({id:"ev_oct",  x:HUB_EV_X+220, y:HUB_EV_Y-480, text:"Octobre 2026",color:"c-sub-date", size:"sz-lg", children:["ev_forest_b"], group:"ev_month"});
+addBubble({id:"ev_mai",  x:HUB_EV_X+230, y:HUB_EV_Y-110, text:"Mai 2026",     color:"c-sub-date", size:"sz-lg", children:["ev_crime","ev_tcc_b","ev_neurosci_b"], group:"ev_month"});
+addBubble({id:"ev_juin", x:HUB_EV_X+230, y:HUB_EV_Y+110, text:"Juin 2026",    color:"c-sub-date", size:"sz-lg", children:["ev_har_b","ev_jnpn_b","ev_neuroplasticite_b","ev_rehab_b","ev_sfpeada_b","ev_sf3pa_b","ev_tdah_cn_b","ev_bipolaire_b"], group:"ev_month"});
+addBubble({id:"ev_oct",  x:HUB_EV_X+230, y:HUB_EV_Y+330, text:"Octobre 2026", color:"c-sub-date", size:"sz-lg", children:["ev_forest_b"], group:"ev_month"});
 allBubbles.find(b=>b.id==="hub_events").children.push("ev_mai","ev_juin","ev_oct");
 
 /* Children of Mai 2026 — go further RIGHT and fan up/down */
-addBubble({id:"ev_crime",     x:HUB_EV_X+440, y:HUB_EV_Y-260, text:"Journées du Crime & de la Science",         color:"c-events-item", size:"sz-md", children:[], resource:"ev_crime_science"});
-addBubble({id:"ev_tcc_b",     x:HUB_EV_X+440, y:HUB_EV_Y-80,  text:"JRTCC 2026 — TCC & Nouvelles Technologies", color:"c-events-item", size:"sz-md", children:[], resource:"ev_tcc"});
+addBubble({id:"ev_crime",     x:HUB_EV_X+440, y:HUB_EV_Y+110, text:"Journées du Crime & de la Science",         color:"c-events-item", size:"sz-md", children:[], resource:"ev_crime_science"});
+addBubble({id:"ev_tcc_b",     x:HUB_EV_X+440, y:HUB_EV_Y+230,  text:"JRTCC 2026 — TCC & Nouvelles Technologies", color:"c-events-item", size:"sz-md", children:[], resource:"ev_tcc"});
 /* Child of Juin 2026 — further right */
-addBubble({id:"ev_har_b",          x:HUB_EV_X+440, y:HUB_EV_Y-190,  text:"Symposium Harcèlement 2026",              color:"c-events-item", size:"sz-md", children:[], resource:"ev_harcelement"});
-addBubble({id:"ev_jnpn_b",         x:HUB_EV_X+440, y:HUB_EV_Y-310, text:"JNPN 2026",                               color:"c-events-item", size:"sz-md", children:[], resource:"ev_jnpn"});
-addBubble({id:"ev_neuroplasticite_b",x:HUB_EV_X+440,y:HUB_EV_Y-430, text:"Neuroplasticité — Penser les Neurosciences", color:"c-events-item", size:"sz-md", children:[], resource:"ev_neuroplasticite"});
-addBubble({id:"ev_neurosci_b",   x:HUB_EV_X+440, y:HUB_EV_Y-400, text:"JT Neurosciences 2026 — Toulouse",           color:"c-events-item", size:"sz-md", children:[], resource:"ev_neurosci_jt"});
-addBubble({id:"ev_rehab_b",      x:HUB_EV_X+440, y:HUB_EV_Y-550, text:"13ème Congrès Réh@b' 2026",                 color:"c-events-item", size:"sz-md", children:[], resource:"ev_rehab"});
+addBubble({id:"ev_har_b",          x:HUB_EV_X+440, y:HUB_EV_Y+40,  text:"Symposium Harcèlement 2026",              color:"c-events-item", size:"sz-md", children:[], resource:"ev_harcelement"});
+addBubble({id:"ev_jnpn_b",         x:HUB_EV_X+440, y:HUB_EV_Y+160, text:"JNPN 2026",                               color:"c-events-item", size:"sz-md", children:[], resource:"ev_jnpn"});
+addBubble({id:"ev_neuroplasticite_b",x:HUB_EV_X+440,y:HUB_EV_Y+280, text:"Neuroplasticité — Penser les Neurosciences", color:"c-events-item", size:"sz-md", children:[], resource:"ev_neuroplasticite"});
+addBubble({id:"ev_neurosci_b",   x:HUB_EV_X+440, y:HUB_EV_Y+250, text:"JT Neurosciences 2026 — Toulouse",           color:"c-events-item", size:"sz-md", children:[], resource:"ev_neurosci_jt"});
+addBubble({id:"ev_rehab_b",      x:HUB_EV_X+440, y:HUB_EV_Y+400, text:"13ème Congrès Réh@b' 2026",                 color:"c-events-item", size:"sz-md", children:[], resource:"ev_rehab"});
 /* Child of Octobre 2026 */
-addBubble({id:"ev_forest_b",       x:HUB_EV_X+440, y:HUB_EV_Y-480, text:"Recherche féconde — Penser les Neurosciences", color:"c-events-item", size:"sz-md", children:[], resource:"ev_forest"});
+addBubble({id:"ev_forest_b",       x:HUB_EV_X+440, y:HUB_EV_Y+330, text:"Recherche féconde — Penser les Neurosciences", color:"c-events-item", size:"sz-md", children:[], resource:"ev_forest"});
 /* Mai 2026 additions */
 /* Juin 2026 additions */
-addBubble({id:"ev_sfpeada_b",  x:HUB_EV_X+640, y:HUB_EV_Y-190,  text:"Congrès SFPEADA 2026 — Nice",            color:"c-events-item", size:"sz-md", children:[], resource:"ev_sfpeada"});
-addBubble({id:"ev_sf3pa_b",    x:HUB_EV_X+640, y:HUB_EV_Y-310, text:"7ème Congrès SF3PA — Lyon",              color:"c-events-item", size:"sz-md", children:[], resource:"ev_sf3pa"});
-addBubble({id:"ev_tdah_cn_b",  x:HUB_EV_X+640, y:HUB_EV_Y-430, text:"14e Journée CN-TDAH — Paris",           color:"c-events-item", size:"sz-md", children:[], resource:"ev_tdah_cn"});
-addBubble({id:"ev_bipolaire_b",x:HUB_EV_X+640, y:HUB_EV_Y-550, text:"Regards croisés — Troubles bipolaires", color:"c-events-item", size:"sz-md", children:[], resource:"ev_bipolaire_angers"});
+addBubble({id:"ev_sfpeada_b",  x:HUB_EV_X+640, y:HUB_EV_Y+40,  text:"Congrès SFPEADA 2026 — Nice",            color:"c-events-item", size:"sz-md", children:[], resource:"ev_sfpeada"});
+addBubble({id:"ev_sf3pa_b",    x:HUB_EV_X+640, y:HUB_EV_Y+160, text:"7ème Congrès SF3PA — Lyon",              color:"c-events-item", size:"sz-md", children:[], resource:"ev_sf3pa"});
+addBubble({id:"ev_tdah_cn_b",  x:HUB_EV_X+640, y:HUB_EV_Y+280, text:"14e Journée CN-TDAH — Paris",           color:"c-events-item", size:"sz-md", children:[], resource:"ev_tdah_cn"});
+addBubble({id:"ev_bipolaire_b",x:HUB_EV_X+640, y:HUB_EV_Y+400, text:"Regards croisés — Troubles bipolaires", color:"c-events-item", size:"sz-md", children:[], resource:"ev_bipolaire_angers"});
 
 /* ── TOOLS HUB (placeholder for future tools) ── */
 // Tools child goes LEFT (hub_tools is upper-left of root)
-addBubble({id:"tools_brisglace",  x:HUB_TOOLS.x-220, y:HUB_TOOLS.y-160, text:"🎲 Jeux Brise-Glace",          color:"c-tools-item", size:"sz-lg", children:[], resource:"r_brisglace"});
-addBubble({id:"tools_roue_emot",  x:HUB_TOOLS.x-220, y:HUB_TOOLS.y-350, text:"🎯 Roue des émotions adulte",  color:"c-tools-item", size:"sz-lg", children:[], resource:"r_roue_emotions"});
+addBubble({id:"tools_brisglace",  x:HUB_TOOLS.x-240, y:HUB_TOOLS.y-90, text:"🎲 Jeux Brise-Glace",          color:"c-tools-item", size:"sz-lg", children:[], resource:"r_brisglace"});
+addBubble({id:"tools_roue_emot",  x:HUB_TOOLS.x-240, y:HUB_TOOLS.y+90, text:"🎯 Roue des émotions adulte",  color:"c-tools-item", size:"sz-lg", children:[], resource:"r_roue_emotions"});
 allBubbles.find(b=>b.id==="hub_tools").children.push("tools_brisglace","tools_roue_emot");
 
 /* ── TOPIC's Mai 2026 → articles (LOCAL, near the month bubble) ── */
@@ -2338,25 +2337,25 @@ allBubbles.forEach(b=>{
 
 /* ── RESOURCES HUB ──
    Sub-branches: Par date / Par thème / Par type  */
-addBubble({id:"res_date",  x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y-160, text:"Par date",  color:"c-sub-resource", size:"sz-md", children:["res_d_year"], group:"res_sub"});
-addBubble({id:"res_theme", x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y-360, text:"Par thème", color:"c-sub-resource", size:"sz-md", children:[], group:"res_sub"});
-addBubble({id:"res_type",  x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y-560, text:"Par type",  color:"c-sub-resource", size:"sz-md", children:["res_livres","res_podcasts","res_videos"], group:"res_sub"});
+addBubble({id:"res_date",  x:HUB_RESOURCES.x-220, y:HUB_RESOURCES.y+180, text:"Par date",  color:"c-sub-resource", size:"sz-md", children:["res_d_year"], group:"res_sub"});
+addBubble({id:"res_theme", x:HUB_RESOURCES.x,     y:HUB_RESOURCES.y+180, text:"Par thème", color:"c-sub-resource", size:"sz-md", children:[], group:"res_sub"});
+addBubble({id:"res_type",  x:HUB_RESOURCES.x+220, y:HUB_RESOURCES.y+180, text:"Par type",  color:"c-sub-resource", size:"sz-md", children:["res_livres","res_podcasts","res_videos"], group:"res_sub"});
 allBubbles.find(b=>b.id==="hub_resources").children.push("res_date","res_theme","res_type");
 
-addBubble({id:"res_d_year", x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y-330, text:"2026",      color:"c-sub-date", size:"sz-sm", children:["res_d_mai"]});
+addBubble({id:"res_d_year", x:HUB_RESOURCES.x-440, y:HUB_RESOURCES.y+390, text:"2026",      color:"c-sub-date", size:"sz-sm", children:["res_d_mai"]});
 addBubble({id:"res_d_mai",  x:HUB_RESOURCES.x-440, y:HUB_RESOURCES.y+555, text:"Mai 2026",   color:"c-sub-date", size:"sz-sm", children:["res_d_mai_num","res_d_mai_podcast","res_d_mai_burnout","res_d_mai_tdah","res_d_mai_jv","res_d_mai_trauma","res_d_mai_har","res_d_mai_bi"]});
-addBubble({id:"res_d_mai_num", x:HUB_RESOURCES.x-60, y:HUB_RESOURCES.y-650, text:"Subjectivités et env. numériques", color:"c-book", size:"sz-sm", resource:"r_book_numerique"});
-addBubble({id:"res_d_mai_podcast", x:HUB_RESOURCES.x+140, y:HUB_RESOURCES.y-650, text:"🎙 La Nuit du Crime — RTL", color:"c-podcast", size:"sz-sm", resource:"r_podcast_nuit_crime"});
-addBubble({id:"res_d_mai_burnout", x:HUB_RESOURCES.x-40,  y:HUB_RESOURCES.y-650, text:"🎙 Burn-out académique",               color:"c-podcast", size:"sz-sm", resource:"r_podcast_burnout"});
-addBubble({id:"res_d_mai_tdah",    x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y-650, text:"🎙 Vivre avec son TDAH",                color:"c-podcast", size:"sz-sm", resource:"r_podcast_tdah_inter"});
-addBubble({id:"res_d_mai_jv",      x:HUB_RESOURCES.x+360, y:HUB_RESOURCES.y-650, text:"🎙 Jeux vidéo & cerveau",               color:"c-podcast", size:"sz-sm", resource:"r_podcast_jv_cerveau"});
-addBubble({id:"res_d_mai_trauma",  x:HUB_RESOURCES.x-440, y:HUB_RESOURCES.y-830, text:"🎙 Psychotraumatisme — France Culture",  color:"c-podcast", size:"sz-sm", resource:"r_podcast_psychotrauma"});
-addBubble({id:"res_d_mai_har",     x:HUB_RESOURCES.x-240, y:HUB_RESOURCES.y-830, text:"🎙 Harcèlement & santé mentale",         color:"c-podcast", size:"sz-sm", resource:"r_podcast_harcelement_rfi"});
-addBubble({id:"res_d_mai_bi",      x:HUB_RESOURCES.x-40,  y:HUB_RESOURCES.y-830, text:"🎥 JMTB 2026 — Trouble bipolaire",      color:"c-video",   size:"sz-sm", resource:"r_video_bipolaire_jmtb"});
-addBubble({id:"res_d_mai_sui",     x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y-830, text:"🎙 Conduites suicidaires & enfance",     color:"c-podcast", size:"sz-sm", resource:"r_podcast_suicide_enfance"});
-addBubble({id:"res_d_mai_vid_sui",  x:HUB_RESOURCES.x+360, y:HUB_RESOURCES.y-650, text:"🎥 Conduites suicidaires — AFPBN",     color:"c-video",   size:"sz-sm", resource:"r_video_conduites_suicidaires"});
-addBubble({id:"res_d_mai_vid_neuro",x:HUB_RESOURCES.x+560, y:HUB_RESOURCES.y-650, text:"🎥 Neurostimulation & crise suicidaire",color:"c-video",   size:"sz-sm", resource:"r_video_neurostimulation_suicide"});
-addBubble({id:"res_d_mai_pod_ect",  x:HUB_RESOURCES.x+360, y:HUB_RESOURCES.y-830, text:"🎙 Électrochocs : mémoire en miettes",  color:"c-podcast", size:"sz-sm", resource:"r_podcast_electrochocs"});
+addBubble({id:"res_d_mai_num", x:HUB_RESOURCES.x-60, y:HUB_RESOURCES.y+720, text:"Subjectivités et env. numériques", color:"c-book", size:"sz-sm", resource:"r_book_numerique"});
+addBubble({id:"res_d_mai_podcast", x:HUB_RESOURCES.x+140, y:HUB_RESOURCES.y+720, text:"🎙 La Nuit du Crime — RTL", color:"c-podcast", size:"sz-sm", resource:"r_podcast_nuit_crime"});
+addBubble({id:"res_d_mai_burnout", x:HUB_RESOURCES.x-40,  y:HUB_RESOURCES.y+720, text:"🎙 Burn-out académique",               color:"c-podcast", size:"sz-sm", resource:"r_podcast_burnout"});
+addBubble({id:"res_d_mai_tdah",    x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y+720, text:"🎙 Vivre avec son TDAH",                color:"c-podcast", size:"sz-sm", resource:"r_podcast_tdah_inter"});
+addBubble({id:"res_d_mai_jv",      x:HUB_RESOURCES.x+360, y:HUB_RESOURCES.y+720, text:"🎙 Jeux vidéo & cerveau",               color:"c-podcast", size:"sz-sm", resource:"r_podcast_jv_cerveau"});
+addBubble({id:"res_d_mai_trauma",  x:HUB_RESOURCES.x-440, y:HUB_RESOURCES.y+900, text:"🎙 Psychotraumatisme — France Culture",  color:"c-podcast", size:"sz-sm", resource:"r_podcast_psychotrauma"});
+addBubble({id:"res_d_mai_har",     x:HUB_RESOURCES.x-240, y:HUB_RESOURCES.y+900, text:"🎙 Harcèlement & santé mentale",         color:"c-podcast", size:"sz-sm", resource:"r_podcast_harcelement_rfi"});
+addBubble({id:"res_d_mai_bi",      x:HUB_RESOURCES.x-40,  y:HUB_RESOURCES.y+900, text:"🎥 JMTB 2026 — Trouble bipolaire",      color:"c-video",   size:"sz-sm", resource:"r_video_bipolaire_jmtb"});
+addBubble({id:"res_d_mai_sui",     x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y+900, text:"🎙 Conduites suicidaires & enfance",     color:"c-podcast", size:"sz-sm", resource:"r_podcast_suicide_enfance"});
+addBubble({id:"res_d_mai_vid_sui",  x:HUB_RESOURCES.x+360, y:HUB_RESOURCES.y+720, text:"🎥 Conduites suicidaires — AFPBN",     color:"c-video",   size:"sz-sm", resource:"r_video_conduites_suicidaires"});
+addBubble({id:"res_d_mai_vid_neuro",x:HUB_RESOURCES.x+560, y:HUB_RESOURCES.y+720, text:"🎥 Neurostimulation & crise suicidaire",color:"c-video",   size:"sz-sm", resource:"r_video_neurostimulation_suicide"});
+addBubble({id:"res_d_mai_pod_ect",  x:HUB_RESOURCES.x+360, y:HUB_RESOURCES.y+900, text:"🎙 Électrochocs : mémoire en miettes",  color:"c-podcast", size:"sz-sm", resource:"r_podcast_electrochocs"});
 
 // Only books, podcasts and videos under res_d_mai — no events
 Object.entries(RESOURCES).forEach(([rid,r],i)=>{
@@ -2375,9 +2374,9 @@ Object.entries(RESOURCES).forEach(([rid,r],i)=>{
 });
 
 // By type
-addBubble({id:"res_livres",  x:HUB_RESOURCES.x+160, y:HUB_RESOURCES.y-730, text:"📗 Livres",  color:"c-book",    size:"sz-sm", children:[], group:"res_type_sub"});
-addBubble({id:"res_podcasts",x:HUB_RESOURCES.x+340, y:HUB_RESOURCES.y-730, text:"🎙 Podcasts", color:"c-podcast", size:"sz-sm", children:[], group:"res_type_sub"});
-addBubble({id:"res_videos",  x:HUB_RESOURCES.x+520, y:HUB_RESOURCES.y-730, text:"🎥 Vidéos",  color:"c-video",   size:"sz-sm", children:[], group:"res_type_sub"});
+addBubble({id:"res_livres",  x:HUB_RESOURCES.x+110, y:HUB_RESOURCES.y+340, text:"📗 Livres",  color:"c-book",    size:"sz-sm", children:[], group:"res_type_sub"});
+addBubble({id:"res_podcasts",x:HUB_RESOURCES.x+220, y:HUB_RESOURCES.y+340, text:"🎙 Podcasts", color:"c-podcast", size:"sz-sm", children:[], group:"res_type_sub"});
+addBubble({id:"res_videos",  x:HUB_RESOURCES.x+330, y:HUB_RESOURCES.y+340, text:"🎥 Vidéos",  color:"c-video",   size:"sz-sm", children:[], group:"res_type_sub"});
 Object.entries(RESOURCES).forEach(([rid,r])=>{
   const bid2="res_type_item_"+rid;
   const parentId = rid.startsWith('r_video')?'res_videos':rid.startsWith('r_podcast')?'res_podcasts':rid.startsWith('r_book')?'res_livres':null;
@@ -2393,7 +2392,7 @@ Object.entries(RESOURCES).forEach(([rid,r])=>{
 // By theme — exclusive: only one topic open at a time, so tight grid is fine
 allTopicNames.forEach((name,i)=>{
   const col=i%3, row=Math.floor(i/3);
-  const tx=HUB_RESOURCES.x+160+col*190, ty=HUB_RESOURCES.y-860-row*160;
+  const tx=HUB_RESOURCES.x-190+col*190, ty=HUB_RESOURCES.y+390+row*160;
   const bid="res_th_"+i;
   allBubbles.find(b=>b.id==="res_theme").children.push(bid);
   addBubble({id:bid, x:tx, y:ty, text:name, color:"c-sub-topic", size:"sz-sm", topic:name, children:[], group:"res_theme_topic"});
@@ -2401,7 +2400,7 @@ allTopicNames.forEach((name,i)=>{
   data.resources.forEach((rid,j)=>{
     const rbid="res_th_item_"+name.replace(/\s/g,'_')+"_"+rid;
     allBubbles.find(b=>b.id===bid).children.push(rbid);
-    addBubble({id:rbid, x:tx-70+j*160, y:ty-165, text:RESOURCES[rid].title,
+    addBubble({id:rbid, x:tx-70+j*160, y:ty+165, text:RESOURCES[rid].title,
       color:rid.startsWith('r_video')?'c-video':rid.startsWith('r_podcast')?'c-podcast':'c-book',
       size:"sz-sm", resource:rid});
   });
@@ -2423,7 +2422,7 @@ const srDiv=document.getElementById("sr");
 const isMobile=window.innerWidth<768;
 let scale=isMobile?0.45:0.72;
 let posX= -(HUB_ROOT.x*scale - window.innerWidth/2);
-let posY= -(HUB_ROOT.y*scale - window.innerHeight/2) + (isMobile?80:60);
+let posY= -(HUB_ROOT.y*scale - window.innerHeight/2) + (isMobile?60:50);
 let dragging=false, moved=false, startX=0, startY=0;
 const VISIBLE=new Set(["hub_root"]);
 
