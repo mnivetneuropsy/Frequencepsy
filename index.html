@@ -4946,11 +4946,852 @@ cm.addEventListener("click",e=>{if(e.target===cm)cm.classList.add("hidden");});
 /* ── lecture, progression & notation ── */
 const TRACKER_KEY="frequencePsyLectureV1";
 const DEFAULT_RATINGS={}; // pas de notes par défaut
+// Compatible avec une ouverture directe depuis un fichier téléchargé.
+// Certains navigateurs bloquent localStorage sur les pages file:// :
+// dans ce cas, le site continue de fonctionner grâce à cette mémoire de secours.
+const FP_MEMORY_STORAGE={};
+function fpStorageGet(key){
+  try{return localStorage.getItem(key);}catch(e){return FP_MEMORY_STORAGE[key]??null;}
+}
+function fpStorageSet(key,value){
+  try{localStorage.setItem(key,value);}catch(e){FP_MEMORY_STORAGE[key]=String(value);}
+}
 let trackerState={read:{},ratings:{}};
 try{
-  const saved=JSON.parse(localStorage.getItem(TRACKER_KEY));
+  const saved=JSON.parse(fpStorageGet(TRACKER_KEY));
   if(saved&&typeof saved==="object") trackerState={read:saved.read||{},ratings:saved.ratings||{}};
 }catch(e){}
-function saveTracker(){localStorage.setItem(TRACKER_KEY,JSON.stringify(trackerState));}
+function saveTracker(){fpStorageSet(TRACKER_KEY,JSON.stringify(trackerState));}
 function articleIds(){return Object.keys(ARTICLES);}
-function getRating(id){return Number((trackerState.ratings&&tracker
+function getRating(id){return Number((trackerState.ratings&&trackerState.ratings[id]) ?? DEFAULT_RATINGS[id] ?? 0);}
+function starsText(n){return "★★★★★".slice(0,n)+"☆☆☆☆☆".slice(0,5-n);}
+function escapeHtml(str){return String(str).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));}
+// Seuls ces IDs affichent le badge NEW (janvier 2026 = a11)
+// (MONTH_ARTICLES and MONTH_LABELS moved earlier in the script, before buildTopicMonthBranch usage)
+
+let currentProgressMonth = "mai";
+let currentRankView = "date";
+let currentRankMonth = "mai";
+let currentRankStars = 5;
+
+function renderProgress(){
+  const ids = MONTH_ARTICLES[currentProgressMonth] || [];
+  const total = ids.length;
+  const read = ids.filter(id=>trackerState.read&&trackerState.read[id]).length;
+  const pct = total ? Math.round((read/total)*100) : 0;
+  document.getElementById("progressPct").textContent = pct+"%";
+  document.getElementById("progressFill").style.width = pct+"%";
+  document.getElementById("progressCount").textContent = read+" article"+(read>1?"s":"")+" lu"+(read>1?"s":"")+" sur "+total;
+  document.getElementById("progressLabel").textContent = MONTH_LABELS[currentProgressMonth];
+  // global badge
+  const allIds = Object.values(MONTH_ARTICLES).flat();
+  const allRead = allIds.filter(id=>trackerState.read&&trackerState.read[id]).length;
+  const allTotal = allIds.length;
+  const allPct = allTotal ? Math.round((allRead/allTotal)*100) : 0;
+  document.getElementById("progressPctBadge").textContent = allPct+"%";
+}
+
+function starsDisplay(n){
+  if(n===0) return '<span style="color:rgba(255,255,255,.3)">☆☆☆☆☆</span>';
+  return '<span style="color:#facc15">'+"★".repeat(n)+"</span>"+'<span style="color:rgba(255,255,255,.2)">'+"☆".repeat(5-n)+"</span>";
+}
+
+function renderRanking(){
+  // Par date
+  const dateIds = MONTH_ARTICLES[currentRankMonth] || [];
+  const dateList = document.getElementById("rankDateList");
+  if(dateList){
+    const items = dateIds
+      .map(id=>({id, title:articleTitle(id), rating:getRating(id)}))
+      .filter(x=>x.rating>0)
+      .sort((a,b)=>b.rating-a.rating||a.title.localeCompare(b.title));
+    dateList.innerHTML = items.length
+      ? items.map((x,i)=>`<div class="rank-item" onclick="openArticleById('${x.id}')">
+          <div class="rank-title">${i+1}. ${escapeHtml(x.title)}</div>
+          <div class="rank-stars">${starsDisplay(x.rating)}</div>
+        </div>`).join("")
+      : '<div class="rank-empty">Aucun article noté pour ce mois.</div>';
+  }
+  // Par note
+  const noteList = document.getElementById("rankNoteList");
+  if(noteList){
+    const allItems = Object.keys(ARTICLES)
+      .map(id=>({id, title:articleTitle(id), rating:getRating(id)}))
+      .filter(x=>x.rating===currentRankStars);
+    noteList.innerHTML = allItems.length
+      ? allItems.map(x=>`<div class="rank-item" onclick="openArticleById('${x.id}')">
+          <div class="rank-title">${escapeHtml(x.title)}</div>
+          <div class="rank-stars">${starsDisplay(x.rating)}</div>
+        </div>`).join("")
+      : '<div class="rank-empty">Aucun article avec cette note.</div>';
+  }
+}
+
+/* collision avoidance removed — exclusive expand makes it unnecessary */
+
+/* ── bubble NEW badge & read indicator helpers ── */
+function updateBubbleReadState(articleId){
+  const els = cv.querySelectorAll("[data-article-id='"+articleId+"']");
+  els.forEach(el=>{
+    const isRead = trackerState.read && trackerState.read[articleId];
+    const existingBadge = el.nextElementSibling;
+    // Update read badge in canvas
+    const canvas = cv;
+    canvas.querySelectorAll(".bbl-read-badge[data-for='"+articleId+"']").forEach(b=>b.remove());
+    if(isRead){
+      const bubble = allBubbles.find(b=>b.article===articleId && el.id==="bbl_"+b.id);
+      if(bubble){
+        const sz = {xl:155,lg:138,md:124,sm:108}[(bubble.size||'sz-sm').split('-')[1]] || 108;
+        const badge = document.createElement("div");
+        badge.className = "bbl-read-badge";
+        badge.dataset.for = articleId;
+        badge.textContent = "✓ Lu";
+        badge.style.left = bubble.x+"px";
+        badge.style.top = (bubble.y + sz/2 + 28)+"px";
+        badge.style.transform = "translateX(-50%)";
+        cv.appendChild(badge);
+      }
+    }
+  });
+}
+
+function renderReadRatingBox(id){
+  if(!id||!ARTICLES[id]) return "";
+  const checked=trackerState.read&&trackerState.read[id]?"checked":"";
+  const rating=getRating(id);
+  return `<div class="read-box" id="readBox" data-article="${id}">
+    <label class="read-row"><input type="checkbox" id="readCheck" ${checked}> J’ai lu cet article</label>
+    <div class="rating-row">
+      <span class="rating-label">Ma note :</span>
+      <button class="zero-btn ${rating===0?'on':''}" data-rate="0">0</button>
+      ${[1,2,3,4,5].map(n=>`<button class="star-btn ${n<=rating?'on':''}" data-rate="${n}">★</button>`).join("")}
+    </div>
+  </div>`;
+}
+function attachReadRatingEvents(id){
+  if(!id||!ARTICLES[id]) return;
+  const check=document.getElementById("readCheck");
+  if(check){
+    check.addEventListener("change",()=>{
+      trackerState.read[id]=check.checked;
+      saveTracker();renderProgress();
+      // Update ALL bubbles for this article (keyed by BUBBLE ID, not article ID)
+      const sz108={xl:155,lg:138,md:124,sm:108};
+      allBubbles.filter(b=>b.article===id).forEach(b=>{
+        const szKey=(b.size||'sz-sm').split('-')[1];
+        const sz=sz108[szKey]||108;
+        const bblEl=document.getElementById("bbl_"+b.id);
+        // Remove this bubble's specific read badge
+        cv.querySelectorAll(".bbl-read-badge[data-for-bubble='"+b.id+"']").forEach(e=>e.remove());
+        if(check.checked){
+          // Add read badge for THIS bubble
+          const rb=document.createElement("div");
+          rb.className="bbl-read-badge";
+          rb.dataset.forBubble=b.id;
+          rb.textContent="✓ Lu";
+          rb.style.left=b.x+"px";
+          rb.style.top=(b.y+sz/2+30)+"px";
+          rb.style.transform="translateX(-50%)";
+          if(!VISIBLE.has(b.id)) rb.style.display="none";
+          cv.appendChild(rb);
+          // Hide NEW badge for this bubble
+          cv.querySelectorAll(".new-badge[data-for-bubble='"+b.id+"']").forEach(e=>e.style.display="none");
+          // Dim the bubble
+          if(bblEl) bblEl.classList.add("read-dim");
+        } else {
+          // Un-read: restore NEW badge (if bubble is visible)
+          cv.querySelectorAll(".new-badge[data-for-bubble='"+b.id+"']").forEach(e=>{
+            if(VISIBLE.has(b.id)) e.style.display="";
+          });
+          // Un-dim the bubble
+          if(bblEl) bblEl.classList.remove("read-dim");
+        }
+      });
+    });
+  }
+  document.querySelectorAll("#readBox [data-rate]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      trackerState.ratings[id]=Number(btn.dataset.rate);
+      saveTracker();renderRanking();
+      const box=document.getElementById("readBox");
+      if(box) box.outerHTML=renderReadRatingBox(id);
+      attachReadRatingEvents(id);
+    });
+  });
+}
+
+/* ── article modal ── */
+function openArticleById(id){
+  if(ARTICLES[id]) openArticle(ARTICLES[id], id);
+  else if(RESOURCES[id]) openArticle(RESOURCES[id], id);
+}
+
+function getRelated(title,tags){
+  const set=new Set(tags||[]);
+  const res=[];
+  Object.entries({...ARTICLES,...RESOURCES}).forEach(([id,a])=>{
+    if(a.title===title)return;
+    const score=(a.tags||[]).filter(t=>set.has(t)).length;
+    if(score>0) res.push({id,title:a.title,tags:a.tags,score});
+  });
+  return res.sort((a,b)=>b.score-a.score).slice(0,3);
+}
+
+function openArticle(data,id=null){
+  document.getElementById("mT").textContent=data.title;
+  document.getElementById("mTags").innerHTML=(data.tags||[]).map(t=>`<span class="mtag">${t}</span>`).join("");
+  const body=document.getElementById("mBody");
+  body.innerHTML=data.content + renderReadRatingBox(id);
+  // Recommendations : insertAdjacentHTML évite de recréer la zone de lecture/notation et conserve les clics.
+  const related=getRelated(data.title,data.tags);
+  if(related.length>0){
+    let html2='<div class="recs"><h3>💡 Vous pourriez aussi aimer</h3><div class="rec-grid">';
+    related.forEach(r=>{
+      html2+=`<button class="rec-card" onclick="openArticleById('${r.id}')">
+        <strong>${r.title}</strong>
+        <span>${(r.tags||[]).slice(0,3).join(' · ')}</span>
+      </button>`;
+    });
+    html2+='</div></div>';
+    body.insertAdjacentHTML("beforeend", html2);
+  }
+  attachReadRatingEvents(id);
+  modal.classList.remove("hidden");
+  modal.querySelector(".modal-box").scrollTop=0;
+}
+document.getElementById("closeModal").addEventListener("click",()=>modal.classList.add("hidden"));
+modal.addEventListener("click",e=>{if(e.target===modal)modal.classList.add("hidden");});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){modal.classList.add("hidden");cm.classList.add("hidden");}});
+
+/* ── search: requires code ── */
+si.addEventListener("click",()=>{
+  if(!unlocked.main){
+    requestCode(()=>{si.removeAttribute("readonly");si.classList.add("active");si.focus();});
+  } else {
+    si.removeAttribute("readonly");si.classList.add("active");si.focus();
+  }
+});
+si.addEventListener("input",handleSearch);
+si.addEventListener("blur",()=>{if(!si.value){srDiv.classList.add("hidden");}});
+
+/* ── NEW button ── */
+const newBtn = document.getElementById("newBtn");
+const newPanel = document.getElementById("newPanel");
+
+function buildNewPanel(){
+  // Gather all articles marked NEW that have content
+  const newArticles = [...NEW_IDS]
+    .filter(id => ARTICLES[id])
+    .map(id => ({ id, ...ARTICLES[id] }));
+
+  if(!newArticles.length){
+    newPanel.innerHTML = '<div class="np-header">✨ Nouveautés</div><div class="np-item"><span class="np-title" style="color:rgba(255,255,255,.4)">Aucun nouvel article.</span></div>';
+    return;
+  }
+
+  let html = '<div class="np-header">✨ Nouveautés</div>';
+  newArticles.forEach(a => {
+    const isRead = trackerState.read && trackerState.read[a.id];
+    html += `<div class="np-item" onclick="openArticleById('${a.id}');newPanel.classList.add('hidden')">
+      <span class="np-badge">NEW</span>
+      <div>
+        <div class="np-title"${isRead?' style="opacity:.5"':''}>${escapeHtml(a.title)}</div>
+        <div class="np-tag">${(a.tags||[]).slice(0,3).join(' · ')}</div>
+      </div>
+    </div>`;
+  });
+  newPanel.innerHTML = html;
+}
+
+newBtn.addEventListener("click", ()=>{
+  const isOpen = !newPanel.classList.contains("hidden");
+  if(isOpen){
+    newPanel.classList.add("hidden");
+  } else {
+    srDiv.classList.add("hidden");
+    buildNewPanel();
+    newPanel.classList.remove("hidden");
+  }
+});
+
+document.addEventListener("click", e=>{
+  if(!newPanel.contains(e.target) && e.target !== newBtn){
+    newPanel.classList.add("hidden");
+  }
+});
+
+function handleSearch(){
+  const q=si.value.trim().toLowerCase();
+  srDiv.innerHTML="";
+  if(!q){srDiv.classList.add("hidden");return;}
+  const items=[
+    ...Object.entries(ARTICLES).map(([id,a])=>({label:a.title,sub:a.tags.join(" · "),kw:(a.title+" "+a.tags.join(" ")).toLowerCase(),article:id})),
+    ...Object.entries(RESOURCES).map(([id,r])=>({label:r.title,sub:r.tags.join(" · "),kw:(r.title+" "+r.tags.join(" ")).toLowerCase(),resource:id})),
+    ...allTopicNames.map(t=>({label:t,sub:"Sujet",kw:t.toLowerCase(),topic:t}))
+  ];
+  const results=items.filter(x=>x.kw.includes(q)||x.label.toLowerCase().includes(q)).slice(0,8);
+  if(!results.length){srDiv.innerHTML='<div class="res"><strong>Aucun résultat</strong></div>';srDiv.classList.remove("hidden");return;}
+  results.forEach(item=>{
+    const d=document.createElement("div");d.className="res";
+    d.innerHTML=`<strong>${item.label}</strong><small>${item.sub}</small>`;
+    d.addEventListener("click",()=>{
+      srDiv.classList.add("hidden");si.value="";
+      if(item.article) openArticleById(item.article);
+      else if(item.resource) openArticleById(item.resource);
+    });
+    srDiv.appendChild(d);
+  });
+  srDiv.classList.remove("hidden");
+}
+
+/* ── lines ── */
+function drawLines(){
+  svgl.innerHTML="";
+  allBubbles.forEach(b=>{
+    if(!VISIBLE.has(b.id))return;
+    (b.children||[]).forEach(cid=>{
+      if(!VISIBLE.has(cid))return;
+      const el1=document.getElementById("bbl_"+b.id);
+      const el2=document.getElementById("bbl_"+cid);
+      if(!el1||!el2)return;
+      const child=allBubbles.find(x=>x.id===cid);
+      const ln=document.createElementNS("http://www.w3.org/2000/svg","line");
+      ln.setAttribute("x1",b.x);ln.setAttribute("y1",b.y);
+      ln.setAttribute("x2",child.x);
+      ln.setAttribute("y2",child.y);
+      if(b.id==="hub_root") ln.setAttribute("class","root-line");
+      svgl.appendChild(ln);
+    });
+  });
+}
+
+/* ── sound ── */
+function playPop(){
+  try{
+    const ac=new(window.AudioContext||window.webkitAudioContext)();
+    const o=ac.createOscillator(),g=ac.createGain();
+    o.connect(g);g.connect(ac.destination);
+    o.type="sine";o.frequency.setValueAtTime(520,ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(280,ac.currentTime+0.18);
+    g.gain.setValueAtTime(0.22,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.22);
+    o.start();o.stop(ac.currentTime+0.22);
+  }catch(e){}
+}
+
+function playWelcomeMelody(){
+  try{
+    const ac=new(window.AudioContext||window.webkitAudioContext)();
+    // Little ascending jingle: C E G C' — bright and magical
+    const notes=[
+      {freq:523.25, t:0,    dur:0.18},  // C5
+      {freq:659.25, t:0.18, dur:0.18},  // E5
+      {freq:783.99, t:0.36, dur:0.18},  // G5
+      {freq:1046.5, t:0.54, dur:0.35},  // C6
+      {freq:783.99, t:0.72, dur:0.18},  // G5 (echo)
+      {freq:1046.5, t:0.88, dur:0.4 },  // C6 (final shimmer)
+    ];
+    notes.forEach(({freq,t,dur})=>{
+      const o=ac.createOscillator(), g=ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type="sine";
+      o.frequency.setValueAtTime(freq, ac.currentTime+t);
+      g.gain.setValueAtTime(0, ac.currentTime+t);
+      g.gain.linearRampToValueAtTime(0.18, ac.currentTime+t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime+t+dur);
+      o.start(ac.currentTime+t);
+      o.stop(ac.currentTime+t+dur+0.05);
+    });
+  }catch(e){}
+}
+/* sound handled per bubble above */
+
+/* ── navigation ── */
+vp.addEventListener("mousedown",e=>{
+  if(e.target.classList.contains("bbl"))return;
+  dragging=true;moved=false;startX=e.clientX-posX;startY=e.clientY-posY;
+});
+window.addEventListener("mouseup",()=>{dragging=false;setTimeout(()=>moved=false,30);});
+window.addEventListener("mousemove",e=>{
+  if(!dragging)return;
+  if(Math.abs(e.clientX-startX-posX)>4||Math.abs(e.clientY-startY-posY)>4)moved=true;
+  posX=e.clientX-startX;posY=e.clientY-startY;applyTransform();
+});
+vp.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const old=scale;scale=Math.min(Math.max(.2,scale-e.deltaY*.001),3);
+  const r=vp.getBoundingClientRect();
+  posX=(e.clientX-r.left)-((e.clientX-r.left-posX)/old)*scale;
+  posY=(e.clientY-r.top)-((e.clientY-r.top-posY)/old)*scale;
+  applyTransform();
+},{passive:false});
+
+let ltDist=null;
+vp.addEventListener("touchstart",e=>{
+  // If touch target is a bubble, don't start canvas drag
+  if(e.target.classList.contains("bbl")) return;
+  e.preventDefault();
+  if(e.touches.length===1){dragging=true;moved=false;startX=e.touches[0].clientX-posX;startY=e.touches[0].clientY-posY;ltDist=null;}
+  else if(e.touches.length===2){dragging=false;ltDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
+},{passive:false});
+vp.addEventListener("touchmove",e=>{
+  e.preventDefault();
+  if(e.touches.length===1&&dragging){
+    const nx=e.touches[0].clientX-startX,ny=e.touches[0].clientY-startY;
+    if(Math.abs(nx-posX)>5||Math.abs(ny-posY)>5)moved=true;
+    posX=nx;posY=ny;applyTransform();
+  } else if(e.touches.length===2&&ltDist){
+    const nd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    const old=scale;scale=Math.min(Math.max(.2,scale*(nd/ltDist)),3);
+    const mx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+    const my=(e.touches[0].clientY+e.touches[1].clientY)/2;
+    posX=mx-((mx-posX)/old)*scale;posY=my-((my-posY)/old)*scale;
+    ltDist=nd;applyTransform();
+  }
+},{passive:false});
+vp.addEventListener("touchend",e=>{if(e.touches.length<2)ltDist=null;if(e.touches.length===0){dragging=false;setTimeout(()=>moved=false,50);}},{passive:false});
+// Juin 2026 → Dépression/Sexologie/Victimologie → articles
+addBubble({id:"date_juin", x:DATE_MAI.x+400, y:DATE_MAI.y, text:"Juin 2026",     color:"c-sub-date", size:"sz-lg", children:["date_juin_dep","date_juin_sex","date_juin_vic","date_juin_tsa"], group:"date_month"});
+
+
+/* ══════════════════════════════════════════
+   OBSERVATOIRE — NAVIGATION HYBRIDE
+══════════════════════════════════════════ */
+const OBS_SCREENS={
+  home:document.getElementById("homeScreen"),
+  explore:document.getElementById("exploreScreen"),
+  catalog:document.getElementById("catalogScreen"),
+  discover:document.getElementById("discoverScreen"),
+  news:document.getElementById("newsScreen"),
+  profile:document.getElementById("profileScreen")
+};
+let catalogKind="all";
+let explorerState={level:"universes",universe:null,topic:null};
+
+const EXPLORER_UNIVERSES={
+  psychologie:{title:"Psychologie",icon:"◉",color:"#f472b6",soft:"rgba(244,114,182,.18)",description:"Émotions, comportements et relations.",keywords:["psych","dépression","anxi","émotion","mémoire","trauma","autis","tsa","tdah","biais","personnalité","couple","sex","enfant","addiction","harcèlement"]},
+  neurosciences:{title:"Neurosciences",icon:"⌁",color:"#67e8f9",soft:"rgba(103,232,249,.17)",description:"Cerveau, cognition et mécanismes biologiques.",keywords:["neuro","cerveau","cognit","hippoc","neur","sommeil","plastic","dopamine","biolog","génét","imagerie","attention"]},
+  criminologie:{title:"Criminologie",icon:"△",color:"#fbbf24",soft:"rgba(251,191,36,.17)",description:"Violence, justice et victimologie.",keywords:["crim","violen","justice","victim","récid","délinq","agress","police","prison","judicia","meurtre","crime"]},
+  resources:{title:"Ressources",icon:"▤",color:"#a78bfa",soft:"rgba(167,139,250,.18)",description:"Livres, podcasts, conférences et médias."},
+  tools:{title:"Outils",icon:"⚙",color:"#34d399",soft:"rgba(52,211,153,.17)",description:"Guides pratiques, formations et supports."}
+};
+const EXPLORER_FAMILIES={
+  psychologie:[
+    ["Cognition & perception",["mémoire","attention","biais","cognit","décision","intelligence","langage","perception"]],
+    ["Santé mentale",["dépression","anxi","stress","trauma","addiction","suicide","burn","trouble"]],
+    ["Développement",["enfant","adolesc","autis","tsa","tdah","parent","éducation"]],
+    ["Relations & société",["couple","sex","émotion","personnalité","social","harcèlement","relation"]]
+  ],
+  neurosciences:[
+    ["Fonctions cérébrales",["cerveau","neuro","hippoc","cortex","neur","plastic","réseau"]],
+    ["Cognition",["mémoire","attention","cognit","sommeil","perception","langage"]],
+    ["Biologie & méthodes",["dopamine","génét","biolog","horm","imagerie","irm","électr"]]
+  ],
+  criminologie:[
+    ["Conduites & violence",["crime","crim","violen","agress","meurtre","délinq","récid"]],
+    ["Justice & enquête",["justice","judicia","police","prison","enquête","procès","témoign"]],
+    ["Victimologie",["victim","trauma","emprise","abus","harcèlement"]]
+  ],
+  resources:[
+    ["À écouter",["podcast","audio","radio","émission"]],
+    ["À voir",["film","documentaire","vidéo","conférence","exposition","musée"]],
+    ["À lire",["livre","lecture","article","revue","ouvrage"]],
+    ["Apprendre & s’orienter",["formation","orientation","diplôme","université","cours"]]
+  ],
+  tools:[
+    ["Guides pratiques",["outil","guide","fiche","méthode","support"]],
+    ["Se former",["formation","diplôme","orientation","cours","du"]],
+    ["Tester & expérimenter",["test","quiz","expérience","échelle","questionnaire"]]
+  ]
+};
+function isToolItem(item){return (item.tags||[]).some(t=>/outil|guide pratique|test|quiz/i.test(String(t)));}
+function explorerUniverseFor(item){if(item.kind==="resource")return isToolItem(item)?"tools":"resources";const hay=(item.title+" "+item.tags.join(" ")).toLowerCase();let best="psychologie",score=-1;["psychologie","neurosciences","criminologie"].forEach(key=>{const n=EXPLORER_UNIVERSES[key].keywords.filter(k=>hay.includes(k)).length;if(n>score){score=n;best=key;}});return best;}
+function explorerItems(universe){return catalogItems().filter(x=>explorerUniverseFor(x)===universe);}
+function explorerTopics(universe){const ignored=new Set(["article","ressource","outil","new","mai 2026","juin 2026","juillet 2026","août 2026","avril 2026","mars 2026","février 2026","janvier 2026"]),counts={};explorerItems(universe).forEach(x=>(x.tags||[]).forEach(t=>{const clean=String(t).trim();if(clean.length>2&&!ignored.has(clean.toLowerCase()))counts[clean]=(counts[clean]||0)+1;}));const topics=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],"fr")).slice(0,24);const used=new Set;const groups=EXPLORER_FAMILIES[universe].map(([title,keys])=>({title,topics:topics.filter(([name])=>{const n=name.toLowerCase();if(used.has(name)||!keys.some(k=>n.includes(k)))return false;used.add(name);return true;})})).filter(g=>g.topics.length);const rest=topics.filter(([name])=>!used.has(name)).slice(0,8);if(rest.length)groups.push({title:"Connexions transversales",topics:rest});return groups;}
+function renderExplorer(){
+  const box=document.getElementById("explorerContent"),crumbs=document.getElementById("explorerCrumbs"),back=document.getElementById("explorerBack"),lead=document.getElementById("explorerLead");box.classList.remove("explorer-step");void box.offsetWidth;box.classList.add("explorer-step");
+  if(explorerState.level==="universes"){back.hidden=true;crumbs.innerHTML="Explorer le cerveau";lead.textContent="Activez l’un des cinq réseaux. Les autres s’effaceront pour vous laisser vous concentrer.";box.innerHTML=`<div class="brain-map" aria-label="Cerveau de connaissances"><span class="brain-axis"></span><span class="synapse s1"></span><span class="synapse s2"></span><span class="synapse s3"></span><span class="synapse s4"></span>${Object.entries(EXPLORER_UNIVERSES).map(([key,u])=>`<button class="brain-zone" data-explorer-universe="${key}" style="--neuron:${u.color};--neuron-soft:${u.soft}" aria-label="Explorer ${u.title}"><em>${u.icon}</em><strong>${u.title}</strong><span>${u.description}<br>${explorerItems(key).length} contenus →</span></button>`).join("")}</div>`;return;}
+  const u=EXPLORER_UNIVERSES[explorerState.universe];back.hidden=false;
+  if(explorerState.level==="topics"){crumbs.innerHTML=`Cerveau <span>›</span> <strong>${u.title}</strong>`;lead.textContent="Les thèmes sont regroupés par famille pour rendre les connexions immédiatement lisibles.";const groups=explorerTopics(explorerState.universe);box.innerHTML=groups.length?`<div class="family-sections">${groups.map(g=>`<section class="family-group" style="--family-color:${u.color}"><h3>${escapeHtml(g.title)}</h3><div class="topic-grid">${g.topics.map(([name,count])=>`<button class="topic-card" data-explorer-topic="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong><span>${count} contenu${count>1?"s":""} →</span></button>`).join("")}</div></section>`).join("")}</div>`:'<div class="explorer-empty">Aucun thème disponible dans ce réseau.</div>';return;}
+  crumbs.innerHTML=`Cerveau <span>›</span> ${u.title} <span>›</span> <strong>${escapeHtml(explorerState.topic)}</strong>`;lead.textContent="Voici uniquement les contenus connectés à ce thème.";const q=explorerState.topic.toLowerCase(),items=explorerItems(explorerState.universe).filter(x=>x.tags.some(t=>String(t).toLowerCase()===q));box.innerHTML=items.length?`<div class="catalog-grid">${items.map(x=>`<button class="catalog-card" data-open-id="${x.id}"><small>${x.kind==="article"?"Article scientifique":explorerState.universe==="tools"?"Outil":"Ressource"}</small><strong>${escapeHtml(x.title)}</strong><span>${escapeHtml(x.tags.slice(0,4).join(" · "))}</span></button>`).join("")}</div>`:'<div class="explorer-empty">Aucun contenu disponible pour ce thème.</div>';
+}
+
+function centerOnBubble(id,zoom){
+  const b=allBubbles.find(x=>x.id===id)||allBubbles.find(x=>x.id==="hub_root");
+  scale=zoom||(isMobile?.55:.78);
+  posX=window.innerWidth/2-b.x*scale;
+  posY=window.innerHeight/2-b.y*scale;
+  applyTransform();
+}
+function openExplorer(){
+  explorerState={level:"universes",universe:null,topic:null};
+  renderExplorer();
+}
+function catalogItems(){
+  return [
+    ...Object.entries(ARTICLES).map(([id,a])=>({id,kind:"article",title:a.title,tags:a.tags||[]})),
+    ...Object.entries(RESOURCES).map(([id,a])=>({id,kind:"resource",title:a.title,tags:a.tags||[]}))
+  ];
+}
+function renderCatalog(){
+  const grid=document.getElementById("catalogGrid");
+  const q=document.getElementById("catalogSearch").value.trim().toLowerCase();
+  const items=catalogItems().filter(x=>(catalogKind==="all"||x.kind===catalogKind)&&(!q||(x.title+" "+x.tags.join(" ")).toLowerCase().includes(q)));
+  grid.innerHTML=items.map(x=>`<button class="catalog-card" data-open-id="${x.id}"><small>${x.kind==="article"?"Article scientifique":"Ressource"}</small><strong>${escapeHtml(x.title)}</strong><span>${escapeHtml(x.tags.slice(0,4).join(" · "))}</span></button>`).join("")||'<div class="catalog-card"><strong>Aucun résultat</strong><span>Essayez un autre mot-clé.</span></div>';
+}
+function renderNewsScreen(){
+  const items=[...NEW_IDS].map(id=>ARTICLES[id]?{id,...ARTICLES[id],kind:"Article"}:RESOURCES[id]?{id,...RESOURCES[id],kind:"Ressource"}:null).filter(Boolean);
+  document.getElementById("newsGrid").innerHTML=items.map(x=>`<button class="catalog-card" data-open-id="${x.id}"><small>NEW · ${x.kind}</small><strong>${escapeHtml(x.title)}</strong><span>${escapeHtml((x.tags||[]).slice(0,4).join(" · "))}</span></button>`).join("");
+}
+function renderProfileScreen(){
+  const readCount=Object.values(trackerState.read||{}).filter(Boolean).length;
+  document.getElementById("profileReadCount").textContent=readCount;
+  const favorites=catalogItems().filter(x=>getRating(x.id)>0).sort((a,b)=>getRating(b.id)-getRating(a.id)).slice(0,5);
+  document.getElementById("profileFavorites").innerHTML=favorites.length?favorites.map(x=>`<button class="catalog-card" data-open-id="${x.id}"><small>${starsText(getRating(x.id))}</small><strong>${escapeHtml(x.title)}</strong></button>`).join(""):'<p style="color:rgba(255,255,255,.45)">Notez vos lectures pour les retrouver ici.</p>';
+  const pSlot=document.getElementById("profileProgressSlot"),rSlot=document.getElementById("profileRankingSlot");
+  if(progressToggle.parentNode!==pSlot)pSlot.appendChild(progressToggle);
+  if(rankingToggle.parentNode!==rSlot)rSlot.appendChild(rankingToggle);
+  renderProgress();renderRanking();
+}
+function showObservationScreen(name){
+  Object.values(OBS_SCREENS).forEach(s=>s&&s.classList.add("hidden"));
+  document.querySelectorAll(".app-nav [data-screen]").forEach(b=>b.classList.toggle("active",b.dataset.screen===name||(name==="news"&&b.dataset.screen==="home")));
+  const isExplore=name==="explore";
+  document.body.classList.remove("explore-mode");
+  document.body.classList.add("screen-open");
+  if(isExplore){OBS_SCREENS.explore.classList.remove("hidden");OBS_SCREENS.explore.scrollTop=0;openExplorer();return;}
+  const screen=OBS_SCREENS[name]||OBS_SCREENS.home;screen.classList.remove("hidden");screen.scrollTop=0;
+  if(name==="catalog")renderCatalog();
+  if(name==="news")renderNewsScreen();
+  if(name==="profile")renderProfileScreen();
+}
+function navigateObservation(name){
+  if(name!=="home"&&!unlocked.main){requestCode(()=>showObservationScreen(name));return;}
+  showObservationScreen(name);
+}
+document.querySelectorAll("[data-screen]").forEach(btn=>btn.addEventListener("click",()=>navigateObservation(btn.dataset.screen)));
+document.getElementById("explorerContent").addEventListener("click",e=>{const u=e.target.closest("[data-explorer-universe]"),t=e.target.closest("[data-explorer-topic]");if(u){explorerState={level:"topics",universe:u.dataset.explorerUniverse,topic:null};renderExplorer();}else if(t){explorerState.level="articles";explorerState.topic=t.dataset.explorerTopic;renderExplorer();}});
+document.getElementById("explorerBack").addEventListener("click",()=>{if(explorerState.level==="articles"){explorerState.level="topics";explorerState.topic=null;}else{explorerState={level:"universes",universe:null,topic:null};}renderExplorer();});
+document.getElementById("catalogSearch").addEventListener("input",renderCatalog);
+document.querySelectorAll(".filter-chip").forEach(btn=>btn.addEventListener("click",()=>{document.querySelectorAll(".filter-chip").forEach(b=>b.classList.remove("active"));btn.classList.add("active");catalogKind=btn.dataset.kind;renderCatalog();}));
+document.addEventListener("click",e=>{const card=e.target.closest("[data-open-id]");if(card)openArticleById(card.dataset.openId);});
+document.getElementById("surpriseBtn").addEventListener("click",()=>{
+  const unread=Object.keys(ARTICLES).filter(id=>!(trackerState.read&&trackerState.read[id]));
+  const pool=unread.length?unread:Object.keys(ARTICLES);
+  const id=pool[Math.floor(Math.random()*pool.length)];
+  const orb=document.querySelector(".discovery-orb");orb.textContent="✦";orb.style.transform="scale(1.12) rotate(180deg)";
+  setTimeout(()=>{orb.style.transform="";orb.textContent="?";openArticleById(id);},650);
+});
+
+/* ── INIT ── */
+// L'ancien canevas n'est plus initialisé : il ne sert que de source historique
+// aux données éditoriales présentes plus haut dans ce fichier.
+showObservationScreen("home");
+/* ── LIGHTBOX ── */
+const lb = document.getElementById("lightbox");
+const lbImg = document.getElementById("lb-img");
+
+function openLightbox(src){
+  lbImg.src = src;
+  lb.classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+function closeLightbox(){
+  lb.classList.remove("open");
+  document.body.style.overflow = "";
+  setTimeout(()=>{ lbImg.src=""; }, 300);
+}
+
+lb.addEventListener("click", e=>{ if(e.target===lb||e.target===lbImg) closeLightbox(); });
+document.getElementById("lb-close").addEventListener("click", closeLightbox);
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeLightbox(); });
+
+// Delegate: any img inside mbody → open lightbox on click/tap
+let _lbLastTouch=0;
+document.getElementById("modal").addEventListener("click", e=>{
+  if(e.target.tagName==="IMG" && e.target.closest(".mbody")){
+    if(Date.now()-_lbLastTouch < 700) return;
+    openLightbox(e.target.src);
+  }
+});
+document.getElementById("modal").addEventListener("touchend", e=>{
+  if(e.target.tagName==="IMG" && e.target.closest(".mbody")){
+    _lbLastTouch = Date.now();
+    openLightbox(e.target.src);
+  }
+},{passive:true});
+
+/* Pinch-to-zoom inside lightbox */
+let lbScale=1, lbLtDist=null;
+lb.addEventListener("touchstart", e=>{
+  if(e.touches.length===2){
+    lbLtDist = Math.hypot(
+      e.touches[0].clientX-e.touches[1].clientX,
+      e.touches[0].clientY-e.touches[1].clientY
+    );
+  }
+},{passive:true});
+lb.addEventListener("touchmove", e=>{
+  if(e.touches.length===2 && lbLtDist){
+    e.preventDefault();
+    const nd = Math.hypot(
+      e.touches[0].clientX-e.touches[1].clientX,
+      e.touches[0].clientY-e.touches[1].clientY
+    );
+    lbScale = Math.min(Math.max(1, lbScale*(nd/lbLtDist)), 4);
+    lbImg.style.transform = `scale(${lbScale})`;
+    lbLtDist = nd;
+  }
+},{passive:false});
+lb.addEventListener("touchend", e=>{
+  if(e.touches.length < 2) lbLtDist = null;
+  if(e.touches.length === 0 && lbScale > 1){
+    // double-tap to reset zoom
+  }
+},{passive:true});
+// Double-tap to reset zoom
+let lbLastTap=0;
+lb.addEventListener("touchend", e=>{
+  const now=Date.now();
+  if(now-lbLastTap < 300){ lbScale=1; lbImg.style.transform="scale(1)"; }
+  lbLastTap=now;
+},{passive:true});
+
+renderProgress();
+renderRanking();
+
+/* ── PANEL TOGGLES ── */
+const progressToggle = document.getElementById("progressToggle");
+const progressPanel = document.getElementById("progressPanel");
+const progressClose = document.getElementById("progressClose");
+const rankingToggle = document.getElementById("rankingToggle");
+const rankingPanel = document.getElementById("rankingPanel");
+const rankingClose = document.getElementById("rankingClose");
+
+progressToggle.addEventListener("click",()=>{
+  progressPanel.classList.toggle("hidden");
+  rankingPanel.classList.add("hidden");
+});
+progressClose.addEventListener("click",()=>progressPanel.classList.add("hidden"));
+
+rankingToggle.addEventListener("click",()=>{
+  rankingPanel.classList.toggle("hidden");
+  progressPanel.classList.add("hidden");
+  renderRanking();
+});
+rankingClose.addEventListener("click",()=>rankingPanel.classList.add("hidden"));
+
+/* ── PROGRESS MONTH TABS ── */
+document.querySelectorAll(".month-tab").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".month-tab").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    currentProgressMonth = btn.dataset.month;
+    renderProgress();
+  });
+});
+
+/* ── RANKING TABS ── */
+document.querySelectorAll(".rank-tab").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".rank-tab").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    currentRankView = btn.dataset.view;
+    document.getElementById("rankByDate").classList.toggle("active", currentRankView==="date");
+    document.getElementById("rankByNote").classList.toggle("active", currentRankView==="note");
+    renderRanking();
+  });
+});
+
+/* Ranking: month select */
+document.querySelectorAll(".rank-month").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".rank-month").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    currentRankMonth = btn.dataset.month;
+    renderRanking();
+  });
+});
+
+/* Ranking: star select */
+document.querySelectorAll(".rank-star-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".rank-star-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    currentRankStars = Number(btn.dataset.stars);
+    renderRanking();
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   INTERFACE V3 — cette page est désormais l'unique référence.
+   L'ancien canevas spatial est retiré du DOM après récupération
+   des données éditoriales. Seuls les articles et ressources restent.
+══════════════════════════════════════════════════════════════ */
+
+// Accès direct : aucun écran ni aucune recherche n'est protégé par un code.
+unlocked.main = true;
+navigateObservation = showObservationScreen;
+
+// Supprime réellement du document les éléments visuels de l'ancien site.
+[document.querySelector("header"), document.querySelector(".sb"), document.getElementById("vp"),
+ document.getElementById("hint"), document.getElementById("cm"), progressToggle, progressPanel,
+ rankingToggle, rankingPanel].forEach(node=>node && node.remove());
+
+const MONTH_ORDER = ["septembre","aout","juil","juin","mai","avr","mars","fev","jan","avant"];
+
+function contentMonthKey(item){
+  if(item.kind === "article") return articleMonthMap[item.id] || "avant";
+  const hay = `${item.title} ${(item.tags||[]).join(" ")} ${(RESOURCES[item.id]&&RESOURCES[item.id].content)||""}`.toLowerCase();
+  const tests = [["aout",/août 2026|aout 2026/],["juil",/juillet 2026/],["juin",/juin 2026/],
+    ["mai",/mai 2026/],["avr",/avril 2026/],["mars",/mars 2026/],["fev",/février 2026|fevrier 2026/],
+    ["jan",/janvier 2026/]];
+  return (tests.find(([,rx])=>rx.test(hay))||["avant"])[0];
+}
+
+function groupedMonthlyCards(items){
+  const groups = {};
+  items.forEach(item=>{ const key=contentMonthKey(item); (groups[key] ||= []).push(item); });
+  return MONTH_ORDER.filter(key=>groups[key]?.length).map(key=>`
+    <section class="month-section" aria-labelledby="month-${key}">
+      <div class="month-heading"><span></span><h3 id="month-${key}">${MONTH_LABELS[key]}</h3><b>${groups[key].length}</b></div>
+      <div class="catalog-grid">${groups[key].map(x=>`
+        <button class="catalog-card${NEW_IDS.has(x.id)?" is-new":""}" data-open-id="${x.id}">
+          ${NEW_IDS.has(x.id)?'<span class="new-ribbon">NOUVEAU</span>':''}
+          <small>${x.kind==="article"?"Article scientifique":"Ressource"}</small>
+          <strong>${escapeHtml(x.title)}</strong><span>${escapeHtml((x.tags||[]).slice(0,4).join(" · "))}</span>
+        </button>`).join("")}</div>
+    </section>`).join("");
+}
+
+// Niveau 1 : cerveau lisible. Niveau 2 : page classique. Niveau 3 : mois.
+renderExplorer = function(){
+  const box=document.getElementById("explorerContent"), crumbs=document.getElementById("explorerCrumbs"),
+    back=document.getElementById("explorerBack"), lead=document.getElementById("explorerLead");
+  box.classList.remove("explorer-step"); void box.offsetWidth; box.classList.add("explorer-step");
+  if(explorerState.level === "universes"){
+    back.hidden=true; crumbs.textContent="Explorer le cerveau";
+    lead.textContent="Chaque domaine occupe une région du cerveau. Choisissez une zone pour ouvrir sa page.";
+    box.innerHTML=`<div class="brain-map" aria-label="Carte interactive du cerveau">
+      <div class="brain-silhouette" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <span class="brain-axis"></span><span class="synapse s1"></span><span class="synapse s2"></span><span class="synapse s3"></span><span class="synapse s4"></span>
+      ${Object.entries(EXPLORER_UNIVERSES).map(([key,u])=>`<button class="brain-zone" data-explorer-universe="${key}" style="--neuron:${u.color};--neuron-soft:${u.soft}"><em>${u.icon}</em><strong>${u.title}</strong><span>${explorerItems(key).length} contenus →</span></button>`).join("")}
+    </div>`; return;
+  }
+  const u=EXPLORER_UNIVERSES[explorerState.universe]; back.hidden=false;
+  if(explorerState.level === "topics"){
+    crumbs.innerHTML=`Cerveau <span>›</span> <strong>${u.title}</strong>`;
+    lead.textContent="Choisissez un thème. Les articles s'ouvriront ensuite sur une page classée par mois.";
+    const groups=explorerTopics(explorerState.universe);
+    box.innerHTML=groups.length?`<div class="family-sections">${groups.map(g=>`<section class="family-group" style="--family-color:${u.color}"><h3>${escapeHtml(g.title)}</h3><div class="topic-grid">${g.topics.map(([name,count])=>`<button class="topic-card" data-explorer-topic="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong><span>${count} contenu${count>1?"s":""} →</span></button>`).join("")}</div></section>`).join("")}</div>`:'<div class="explorer-empty">Aucun thème disponible.</div>'; return;
+  }
+  crumbs.innerHTML=`Cerveau <span>›</span> ${u.title} <span>›</span> <strong>${escapeHtml(explorerState.topic)}</strong>`;
+  lead.textContent="Les contenus sont classés du mois le plus récent au plus ancien.";
+  const q=explorerState.topic.toLowerCase(), items=explorerItems(explorerState.universe).filter(x=>x.tags.some(t=>String(t).toLowerCase()===q));
+  box.innerHTML=items.length?groupedMonthlyCards(items):'<div class="explorer-empty">Aucun contenu disponible pour ce thème.</div>';
+};
+
+renderNewsScreen = function(){
+  const items=[...NEW_IDS].map(id=>ARTICLES[id]?{id,...ARTICLES[id],kind:"article"}:RESOURCES[id]?{id,...RESOURCES[id],kind:"resource"}:null).filter(Boolean);
+  document.getElementById("newsGrid").innerHTML=items.map(x=>`<button class="catalog-card is-new" data-open-id="${x.id}"><span class="new-ribbon">NOUVEAU</span><small>${x.kind==="article"?"Article scientifique":"Ressource"}</small><strong>${escapeHtml(x.title)}</strong><span>${escapeHtml((x.tags||[]).slice(0,4).join(" · "))}</span></button>`).join("");
+};
+
+renderProfileScreen = function(){
+  const readIds=Object.keys(ARTICLES).filter(id=>trackerState.read&&trackerState.read[id]);
+  const rated=Object.keys(ARTICLES).map(id=>({id,title:articleTitle(id),rating:getRating(id)})).filter(x=>x.rating>0).sort((a,b)=>b.rating-a.rating||a.title.localeCompare(b.title,"fr"));
+  const allIds=Object.values(MONTH_ARTICLES).flat(), pct=allIds.length?Math.round(readIds.length/allIds.length*100):0;
+  const monthly=MONTH_ORDER.map(key=>{const ids=MONTH_ARTICLES[key]||[],n=ids.filter(id=>trackerState.read&&trackerState.read[id]).length;return {key,n,total:ids.length,p:ids.length?Math.round(n/ids.length*100):0};}).filter(x=>x.total);
+  document.getElementById("profileScreen").innerHTML=`
+    <div class="panel-head"><div><div class="screen-kicker">Mon espace</div><h2 id="profileTitle">Votre carnet d'exploration.</h2></div><p>Vos lectures et vos notes restent enregistrées sur cet appareil.</p></div>
+    <div class="profile-tabs" role="tablist"><button class="active" data-profile-tab="progress">Progression</button><button data-profile-tab="ranking">Mon classement</button></div>
+    <section class="profile-view" data-profile-view="progress"><div class="profile-summary"><div><span>Progression globale</span><strong>${pct}%</strong><small>${readIds.length} article${readIds.length>1?"s":""} lu${readIds.length>1?"s":""} sur ${allIds.length}</small></div><div class="profile-ring" style="--pct:${pct}"><b>${pct}%</b></div></div><div class="month-progress-list">${monthly.map(m=>`<div class="month-progress"><div><strong>${MONTH_LABELS[m.key]}</strong><span>${m.n} / ${m.total}</span></div><div><i style="width:${m.p}%"></i></div></div>`).join("")}</div></section>
+    <section class="profile-view hidden" data-profile-view="ranking"><div class="ranking-head"><strong>${rated.length} lecture${rated.length>1?"s":""} classée${rated.length>1?"s":""}</strong><span>Selon vos notes personnelles</span></div><div class="ranking-list">${rated.length?rated.map((x,i)=>`<button data-open-id="${x.id}"><b>${i+1}</b><span><strong>${escapeHtml(x.title)}</strong><small>${starsDisplay(x.rating)}</small></span></button>`).join(""):'<div class="profile-empty">Aucun classement pour le moment. Ouvrez un article et attribuez-lui une note pour le retrouver ici.</div>'}</div></section>`;
+};
+
+document.getElementById("profileScreen").addEventListener("click",e=>{
+  const tab=e.target.closest("[data-profile-tab]"); if(!tab)return;
+  document.querySelectorAll("[data-profile-tab]").forEach(b=>b.classList.toggle("active",b===tab));
+  document.querySelectorAll("[data-profile-view]").forEach(v=>v.classList.toggle("hidden",v.dataset.profileView!==tab.dataset.profileTab));
+});
+
+/* Taxonomie éditoriale multi-connexions : un contenu peut vivre dans plusieurs thèmes. */
+const FP_TOPICS={
+  psychologie:[
+    ["Santé mentale",[["Dépression",["dépression","dépressif"]],["Anxiété",["anxiété","anxieux"]],["Schizophrénie & psychoses",["schizophrén","psychose","psychotique"]],["Troubles bipolaires",["bipolaire","manie"]],["Suicide & prévention",["suicide","suicidaire"]],["Traumatismes & TSPT",["trauma","tspt","stress post-traumatique"]],["Addictions",["addiction","dépendance"]],["Troubles alimentaires",["anorex","boulim","trouble alimentaire"]],["Burn-out",["burn-out","burnout","épuisement professionnel"]],["Troubles de la personnalité",["personnalité","borderline"]]]],
+    ["Neurodéveloppement",[["TSA & autisme",["tsa","autis"]],["TDAH",["tdah","déficit de l'attention"]],["Enfance",["enfant","enfance"]],["Adolescence",["adolesc"]],["Parentalité",["parent","parentalité"]]]],
+    ["Cognition & comportements",[["Mémoire",["mémoire","souvenir"]],["Attention",["attention"]],["Biais cognitifs",["biais"]],["Émotions",["émotion"]],["Prise de décision",["décision","choix"]]]],
+    ["Relations & société",[["Couple",["couple","conjugal","divorce"]],["Sexologie",["sexolog","sexual"]],["Harcèlement",["harcèlement"]],["Travail",["travail","professionnel"]],["Réseaux sociaux",["réseaux sociaux","social media"]]]]
+  ],
+  neurosciences:[
+    ["Cerveau & réseaux",[["Neuroanatomie",["cortex","hippocampe","subcortical"]],["Connectivité cérébrale",["connectivité","réseau cérébral","dysconnect"]],["Plasticité",["plasticité"]],["Neurotransmetteurs",["dopamine","sérotonine","neurotransmetteur"]]]],
+    ["Troubles neurodéveloppementaux",[["TSA & autisme",["tsa","autis"]],["TDAH",["tdah","déficit de l'attention"]],["Troubles DYS",["dyslex","dysprax","dysphas","dyscalcul","trouble dys"]],["Déficience intellectuelle",["déficience intellectuelle","handicap intellectuel"]],["Troubles du neurodéveloppement",["neurodéveloppement","tnd"]]]],
+    ["Neurologie",[["AVC",["avc","accident vasculaire cérébral","accident cérébrovasculaire"]],["Épilepsie",["épilep","crise convulsive"]],["Maladies neurodégénératives",["neurodégénér","alzheimer","parkinson","démence"]],["Traumatismes crâniens",["traumatisme crânien","commotion cérébrale"]],["Sclérose en plaques",["sclérose en plaques"]]]],
+    ["Fonctions cognitives",[["Mémoire",["mémoire","souvenir"]],["Attention",["attention"]],["Sommeil",["sommeil"]],["Langage",["langage"]],["Perception",["perception"]]]],
+    ["Méthodes & biologie",[["IRM & neuroimagerie",["irm","imagerie"]],["Génétique",["génét"]],["Hormones",["hormone","cortisol"]],["Électrophysiologie",["électr","eeg"]]]]
+  ],
+  criminologie:[
+    ["Violences",[["Violences conjugales",["violence conjugale","violences domestiques"]],["Agressions",["agression","agressif"]],["Homicide",["homicide","meurtre"]],["Récidive",["récidive"]]]],
+    ["Justice & enquête",[["Justice",["justice","judiciaire"]],["Police & enquête",["police","enquête"]],["Prison",["prison","carcéral"]],["Témoignage",["témoignage","témoin"]]]],
+    ["Victimologie",[["Victimes",["victime","victimologie"]],["Emprise",["emprise"]],["Traumatismes",["trauma","tspt"]],["Harcèlement",["harcèlement"]]]]
+  ],
+  resources:[
+    ["Formats",[["Podcasts",["podcast","radio","audio"]],["Livres & revues",["livre","ouvrage","revue"]],["Vidéos & documentaires",["vidéo","documentaire","film"]],["Conférences & événements",["conférence","congrès","exposition","musée"]]]],
+    ["Apprendre",[["Formations",["formation","diplôme","université"]],["Lectures professionnelles",["lecture","professionnel"]]]]
+  ],
+  tools:[
+    ["Pratique",[["Guides & fiches",["guide","fiche","support"]],["PDF à télécharger",["pdf"]],["Échelles & questionnaires",["échelle","questionnaire"]],["Tests & expériences",["test","quiz","expérience"]],["Psychoéducation",["psychoéducation"]]]]
+  ]
+};
+function fpHay(item){const source=item.kind==="article"?ARTICLES[item.id]:RESOURCES[item.id];return `${item.title} ${(item.tags||[]).join(" ")} ${(source&&source.content)||""}`.toLowerCase();}
+function fpTopicDefinition(universe,name){for(const [,topics] of FP_TOPICS[universe]||[])for(const topic of topics)if(topic[0]===name)return topic;return null;}
+function fpMatches(item,topic){const hay=fpHay(item),needles=topic?.[1]||[];return needles.some(k=>hay.includes(k));}
+explorerTopics=function(universe){const items=explorerItems(universe);return (FP_TOPICS[universe]||[]).map(([title,topics])=>({title,topics:topics.map(topic=>[topic[0],items.filter(item=>fpMatches(item,topic)).length]).filter(([,count])=>count>0)})).filter(group=>group.topics.length);};
+
+/* 50 badges : paliers globaux, thèmes, diversité, mois et évaluations. */
+const FP_BADGES=[];
+[[1,"Premier déclic"],[3,"Curiosité éveillée"],[5,"Lecteur en herbe"],[10,"Explorateur"],[15,"Esprit curieux"],[20,"Connecteur"],[25,"Voyageur neuronal"],[30,"Insatiable"],[40,"Grand explorateur"],[50,"Cartographe du savoir"],[60,"Synapse majeure"],[75,"Passe-muraille"],[100,"Cerveau en ébullition"]].forEach(([n,title])=>FP_BADGES.push({title,desc:`Lire ${n} article${n>1?"s":""}`,icon:"◉",goal:n,value:()=>readArticleIds().length}));
+const badgeThemes=[["Dépression","Dépression"],["Anxiété","Anxiété"],["Schizophrénie & psychoses","Schizophrénie"],["Troubles bipolaires","Bipolarité"],["Suicide & prévention","Prévention suicide"],["Traumatismes & TSPT","Trauma"],["Addictions","Addictions"],["TSA & autisme","TSA"],["TDAH","TDAH"],["Mémoire","Mémoire"],["Sommeil","Sommeil"],["Couple","Relations"],["Sexologie","Sexologie"],["Harcèlement","Harcèlement"],["Violences conjugales","Victimologie"]];
+function readArticleIds(){return Object.keys(ARTICLES).filter(id=>trackerState.read&&trackerState.read[id]);}
+function readCountForTopic(name){const defs=Object.entries(FP_TOPICS).flatMap(([u,groups])=>groups.flatMap(([,topics])=>topics.filter(t=>t[0]===name)));return readArticleIds().filter(id=>defs.some(d=>fpMatches({id,kind:"article",title:ARTICLES[id].title,tags:ARTICLES[id].tags||[]},d))).length;}
+badgeThemes.forEach(([topic,label])=>{[3,5].forEach(n=>FP_BADGES.push({title:`${label} ${n}`,desc:`Lire ${n} articles liés à ${label.toLowerCase()}`,icon:"⌁",goal:n,value:()=>readCountForTopic(topic)}));});
+FP_BADGES.push(
+  {title:"Esprit transversal",desc:"Explorer 5 thèmes différents",icon:"✦",goal:5,value:()=>badgeThemes.filter(([t])=>readCountForTopic(t)>0).length},
+  {title:"Polyvalent",desc:"Explorer 10 thèmes différents",icon:"✦",goal:10,value:()=>badgeThemes.filter(([t])=>readCountForTopic(t)>0).length},
+  {title:"Tour d'horizon",desc:"Lire dans les 3 domaines scientifiques",icon:"△",goal:3,value:()=>new Set(readArticleIds().map(id=>explorerUniverseFor({id,kind:"article",title:ARTICLES[id].title,tags:ARTICLES[id].tags||[]}))).size},
+  {title:"Mois découvert",desc:"Lire tous les articles d’un mois",icon:"◷",goal:1,value:()=>MONTH_ORDER.filter(k=>(MONTH_ARTICLES[k]||[]).length&&(MONTH_ARTICLES[k]||[]).every(id=>trackerState.read&&trackerState.read[id])).length},
+  {title:"Deux mois accomplis",desc:"Terminer deux mois de lecture",icon:"◷",goal:2,value:()=>MONTH_ORDER.filter(k=>(MONTH_ARTICLES[k]||[]).length&&(MONTH_ARTICLES[k]||[]).every(id=>trackerState.read&&trackerState.read[id])).length},
+  {title:"Critique débutant",desc:"Noter 3 articles",icon:"★",goal:3,value:()=>Object.keys(ARTICLES).filter(id=>getRating(id)>0).length},
+  {title:"Critique confirmé",desc:"Noter 10 articles",icon:"★",goal:10,value:()=>Object.keys(ARTICLES).filter(id=>getRating(id)>0).length}
+);
+
+const baseRenderExplorer=renderExplorer;
+renderExplorer=function(){baseRenderExplorer();if(explorerState.level!=="articles")return;const topic=fpTopicDefinition(explorerState.universe,explorerState.topic);const items=explorerItems(explorerState.universe).filter(item=>fpMatches(item,topic));document.getElementById("explorerContent").innerHTML=items.length?groupedMonthlyCards(items):'<div class="explorer-empty">Aucun contenu disponible pour ce thème.</div>';};
+const baseRenderProfile=renderProfileScreen;
+const FP_PREF_KEY="frequencePsyFavoriteTopics";
+const allPreferenceTopics=()=>Object.values(FP_TOPICS).flatMap(groups=>groups.flatMap(([,topics])=>topics.map(t=>t[0]))).filter((name,index,all)=>all.indexOf(name)===index).sort((a,b)=>a.localeCompare(b,"fr"));
+const getPreferences=()=>{try{return JSON.parse(fpStorageGet(FP_PREF_KEY)||"[]")}catch(e){return[]}};
+const setPreferences=topics=>fpStorageSet(FP_PREF_KEY,JSON.stringify(topics.slice(0,5)));
+function itemPreferenceMatches(item,prefs=getPreferences()){return prefs.some(name=>{const defs=Object.values(FP_TOPICS).flatMap(groups=>groups.flatMap(([,topics])=>topics.filter(t=>t[0]===name)));return defs.some(def=>fpMatches(item,def));});}
+function interestButtons(selected){return allPreferenceTopics().map(name=>`<button type="button" class="interest-chip${selected.includes(name)?" selected":""}" data-interest="${escapeHtml(name)}">${escapeHtml(name)}</button>`).join("");}
+
+const onboarding=document.getElementById("fpOnboarding"),onboardingGrid=document.getElementById("onboardingInterests"),onboardingCount=document.getElementById("onboardingCount"),onboardingConfirm=document.getElementById("onboardingConfirm");
+let onboardingSelection=getPreferences();
+function refreshOnboarding(){onboardingGrid.innerHTML=interestButtons(onboardingSelection);onboardingCount.textContent=onboardingSelection.length;onboardingConfirm.disabled=onboardingSelection.length!==5;}
+onboardingGrid.addEventListener("click",e=>{const btn=e.target.closest("[data-interest]");if(!btn)return;const name=btn.dataset.interest,index=onboardingSelection.indexOf(name);if(index>=0)onboardingSelection.splice(index,1);else if(onboardingSelection.length<5)onboardingSelection.push(name);refreshOnboarding();});
+onboardingConfirm.addEventListener("click",()=>{if(onboardingSelection.length!==5)return;setPreferences(onboardingSelection);onboarding.classList.add("hidden");renderNewsScreen();});
+
+renderProfileScreen=function(){baseRenderProfile();const tabs=document.querySelector(".profile-tabs");tabs.insertAdjacentHTML("beforeend",'<button data-profile-tab="badges">Mes badges</button><button data-profile-tab="preferences">Mes sujets</button>');const unlocked=FP_BADGES.filter(b=>b.value()>=b.goal).length;const prefs=getPreferences();document.getElementById("profileScreen").insertAdjacentHTML("beforeend",`<section class="profile-view hidden" data-profile-view="badges"><div class="badge-summary"><div><strong>${unlocked} / ${FP_BADGES.length}</strong><span>badges débloqués sur Fréquence Psy</span></div><span>Chaque lecture peut activer plusieurs objectifs.</span></div><div class="badge-grid">${FP_BADGES.map(b=>{const value=Math.min(b.value(),b.goal),ok=value>=b.goal,pct=Math.round(value/b.goal*100);return `<article class="achievement${ok?" unlocked":""}"><span class="achievement-icon">${ok?b.icon:"◌"}</span><strong>${escapeHtml(b.title)}</strong><small>${escapeHtml(b.desc)} · ${value}/${b.goal}</small><div class="achievement-progress"><i style="width:${pct}%"></i></div></article>`}).join("")}</div></section><section class="profile-view hidden" data-profile-view="preferences"><p class="preferences-help">Choisissez exactement 5 sujets. Les nouveautés correspondantes seront affichées en premier dans « Nouveautés ».</p><div class="interest-grid" id="profileInterests">${interestButtons(prefs)}</div><button class="onboarding-confirm preferences-save" id="saveProfileInterests" ${prefs.length===5?"":"disabled"}>Enregistrer mes 5 sujets</button></section>`);};
+
+document.getElementById("profileScreen").addEventListener("click",e=>{const chip=e.target.closest("#profileInterests [data-interest]");if(chip){const grid=chip.parentElement,selected=[...grid.querySelectorAll(".selected")],isSelected=chip.classList.contains("selected");if(isSelected)chip.classList.remove("selected");else if(selected.length<5)chip.classList.add("selected");const save=document.getElementById("saveProfileInterests");save.disabled=grid.querySelectorAll(".selected").length!==5;return;}if(e.target.id==="saveProfileInterests"){const chosen=[...document.querySelectorAll("#profileInterests .selected")].map(b=>b.dataset.interest);if(chosen.length===5){setPreferences(chosen);e.target.textContent="Préférences enregistrées ✓";renderNewsScreen();}}});
+
+renderNewsScreen=function(){const prefs=getPreferences(),items=[...NEW_IDS].map(id=>ARTICLES[id]?{id,...ARTICLES[id],kind:"article"}:RESOURCES[id]?{id,...RESOURCES[id],kind:"resource"}:null).filter(Boolean).sort((a,b)=>Number(itemPreferenceMatches(b,prefs))-Number(itemPreferenceMatches(a,prefs)));const n=items.filter(x=>itemPreferenceMatches(x,prefs)).length;document.getElementById("newsGrid").innerHTML=`<div class="personal-priority">${prefs.length?`Les nouveautés liées à vos 5 sujets apparaissent en priorité${n?` : <strong>${n} recommandation${n>1?"s":""} pour vous</strong>`:"."}`:"Choisissez vos sujets dans Mon espace pour personnaliser cet écran."}</div>`+items.map(x=>`<button class="catalog-card is-new" data-open-id="${x.id}">${itemPreferenceMatches(x,prefs)?'<span class="for-you-ribbon">POUR VOUS</span>':''}<span class="new-ribbon">NOUVEAU</span><small>${x.kind==="article"?"Article scientifique":"Ressource"}</small><strong>${escapeHtml(x.title)}</strong><span>${escapeHtml((x.tags||[]).slice(0,4).join(" · "))}</span></button>`).join("");};
+
+/* Le clic zoome vers la région choisie avant d'afficher la page classique. */
+document.getElementById("explorerContent").addEventListener("click",e=>{const zone=e.target.closest("[data-explorer-universe]");if(!zone||explorerState.level!=="universes")return;e.preventDefault();e.stopImmediatePropagation();const map=zone.closest(".brain-map");map.classList.add("is-zooming");zone.classList.add("is-active");playPop();setTimeout(()=>{explorerState={level:"topics",universe:zone.dataset.explorerUniverse,topic:null};renderExplorer();},620);},true);
+
+// Redessine l'accueil après le nettoyage et ouvre toutes les rubriques sans code.
+showObservationScreen("home");
+if(getPreferences().length!==5){onboardingSelection=[];refreshOnboarding();onboarding.classList.remove("hidden");}
+</script>
+</body>
+</html>
